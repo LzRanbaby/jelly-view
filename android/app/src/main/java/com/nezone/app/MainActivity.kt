@@ -58,7 +58,7 @@ class MainActivity : Activity() {
                 )
                 webView.visibility = View.GONE
                 requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                setImmersive(true)
+                applySysBars(true)
             }
 
             override fun onHideCustomView() {
@@ -67,7 +67,7 @@ class MainActivity : Activity() {
                 customView = null
                 webView.visibility = View.VISIBLE
                 requestedOrientation = savedOrientation
-                setImmersive(false)
+                applySysBars(false)
                 customCallback?.onCustomViewHidden()
                 customCallback = null
             }
@@ -80,7 +80,7 @@ class MainActivity : Activity() {
     }
 
     @Suppress("DEPRECATION")
-    private fun setImmersive(on: Boolean) {
+    private fun applySysBars(on: Boolean) {
         window.decorView.systemUiVisibility = if (on) {
             View.SYSTEM_UI_FLAG_FULLSCREEN or
                 View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
