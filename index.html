@@ -199,10 +199,11 @@ main{position:fixed;z-index:1;inset:0;overflow:hidden}
       <div class="addrow"><input id="addonUrl" placeholder="粘贴 addon 的 manifest.json 链接"><button id="addonAdd">添加</button></div>
       <div id="addonList"></div>
       <div style="margin-top:6px"><span style="font-size:12px;color:var(--sub)">试试这些：</span><br>
+        <span class="preset" data-u="https://nezone-source.vercel.app/manifest.json">nezone 官方源（推荐）</span>
         <span class="preset" data-u="https://torrentio.strem.fun/providers=yts,eztv,rarbg,1337x,thepiratebay,kickasstorrents,torrentgalaxy,magnetdl,horriblesubs,nyaasi,tokyotosho,anidex/manifest.json">Torrentio（未验证）</span>
       </div>
     </div>
-    <div class="glass setrow"><div>关于 nezone<small>v2 · 单文件 · 登录后收藏/历史云端同步<br>片源来自你配置的第三方源，App 本体不存任何视频</small></div></div>
+    <div class="glass setrow"><div>关于 nezone<small>v3 · 单文件 · 登录后收藏/历史云端同步<br>片源来自你配置的第三方源，App 本体不存任何视频</small></div></div>
   </section>
 </main>
 
@@ -239,9 +240,15 @@ const kPoster=a=>{const p=a.attributes.posterImage;return p?(p.medium||p.small||
 const kCover=a=>{const c=a.attributes.coverImage;return c?(c.large||c.original):''};
 /* ================= 播放源（Stremio 协议，用户自配） ================= */
 function addons(){return store.get('addons',[])}
+const OFFICIAL='https://nezone-source.vercel.app';
+function zhHints(){return store.get('zh',{})}
+function saveZh(id,name){const z=zhHints();if(z[id]!==name){z[id]=name;store.set('zh',z)}}
 async function addonStreams(base,type,id){
   const b=base.replace(/\/manifest\.json\/?$/,'').replace(/\/$/,'');
-  const d=await getJSON(`${b}/stream/${type}/${id}.json`);
+  const isOff=b.startsWith(OFFICIAL);
+  const hint=isOff&&curDetail?(curDetail.hint||curDetail.name||''):'';
+  const q=hint?('?q='+encodeURIComponent(hint)):'';
+  const d=await getJSON(`${b}/stream/${type}/${id}.json${q}`,isOff?60000:15000);
   if(!d||!d.streams)return [];
   return d.streams.filter(s=>s.url).map(s=>({name:s.name||'线路',info:(s.title||'').split('\n')[0]||s.url.slice(0,60),url:s.url,from:base}));
 }
@@ -291,13 +298,26 @@ async function doSearch(q){
   if(curView==='v-home'){/* 首页搜电影 */ }
   let html='<div class="spin"></div>';
   if(isAnime){
-    const an=await kitsu('/anime?filter[text]='+encodeURIComponent(q)+'&page[limit]=24');
-    html=an.length?an.map(a=>cardHTML({kind:'kitsu',id:a.id,name:a.attributes.canonicalTitle,poster:kPoster(a),sub:a.attributes.subtype||''})).join(''):'<div class="empty">没搜到 🥲<br>换个关键词试试</div>';
+    let done=false;
+    if(/[一-鿿]/.test(q)){
+      const bg=await getJSON('https://api.bgm.tv/search/subject/'+encodeURIComponent(q)+'?type=2&responseGroup=large');
+      const list=(bg&&bg.list||[]).slice(0,8),found=[];
+      for(const s of list){
+        const res=await kitsu('/anime?filter[text]='+encodeURIComponent(s.name)+'&page[limit]=1');
+        if(res.length){const a=res[0];found.push({a,zh:s.name_cn||s.name,img:(s.images&&(s.images.large||s.images.common))||kPoster(a)})}
+      }
+      if(found.length){html=found.map(x=>cardHTML({kind:'kitsu',id:x.a.id,name:x.zh,poster:x.img,sub:x.a.attributes.subtype||''})).join('');done=true}
+    }
+    if(!done){
+      const an=await kitsu('/anime?filter[text]='+encodeURIComponent(q)+'&page[limit]=24');
+      html=an.length?an.map(a=>cardHTML({kind:'kitsu',id:a.id,name:a.attributes.canonicalTitle,poster:kPoster(a),sub:a.attributes.subtype||''})).join(''):'<div class="empty">没搜到 🥲<br>换个关键词试试</div>';
+    }
     $('grid-anime').innerHTML=html;bindCards($('grid-anime'));
   }else{
     const type=curView==='v-movie'?'movie':'movie';
     const [mv,se]=await Promise.all([cmCatalog(type,'/search='+encodeURIComponent(q)),cmCatalog('series','/search='+encodeURIComponent(q))]);
     const all=[...mv.map(m=>({...m,kind:'cm:movie'})),...se.map(m=>({...m,kind:'cm:series'}))].slice(0,30);
+    if(/[一-鿿]/.test(q))all.forEach(m=>saveZh(m.id,q));
     html=all.length?all.map(m=>cardHTML({kind:m.kind,id:m.id,name:m.name,poster:m.poster,sub:m.releaseInfo||''})).join(''):'<div class="empty">没搜到 🥲<br>换个关键词试试</div>';
     if(curView==='v-movie'){$('grid-movie').innerHTML=html;bindCards($('grid-movie'))}
     else{$('v-home').innerHTML=`<h2 class="sec"><span class="dot"></span>搜索「${q}」</h2><div class="grid">${html}</div>`;bindCards($('v-home'))}
@@ -315,7 +335,7 @@ async function openDetail(kind,id){
     if(!m){toast('详情加载失败');closeDetail();return}
     const vids=(m.videos||[]).filter(v=>v.season&&v.episode);
     const isSeries=vids.length>0;
-    curDetail={kind,type,cid:id,name:m.name,poster:m.poster,bg:m.background,isSeries};
+    curDetail={kind,type,cid:id,name:m.name,poster:m.poster,bg:m.background,isSeries,hint:zhHints()[id]||''};
     curEp=isSeries?vids[0]:null;
     box.innerHTML=
       '<div class="d-bg" style="background-image:url(\''+(m.background||m.poster)+'\')"></div>'+
@@ -330,6 +350,7 @@ async function openDetail(kind,id){
         '<h2 class="sec"><span class="dot" style="background:var(--blue);box-shadow:0 0 10px var(--blue)"></span>播放线路</h2>'+
         '<div class="streams" id="streams"><div class="empty">点下面按钮从你配的源加载线路</div></div>'+
         '<button class="btn ghost" style="width:100%;margin-top:10px" onclick="loadStreams()">🔄 加载线路</button>'+
+        '<div class="addrow" style="margin-top:10px"><input id="zhName" placeholder="国漫/国剧搜不到？填中文名再试，如：无上神帝" value="'+(curDetail.hint||'')+'"><button onclick="applyZh()">用它找</button></div>'+
       '</div>';
     if(isSeries){box.querySelectorAll('.ep').forEach(b=>b.onclick=()=>{box.querySelectorAll('.ep').forEach(x=>x.classList.remove('sel'));b.classList.add('sel');curEp=vids[+b.dataset.i];$('streams').innerHTML='<div class="empty">换集了，重新加载线路</div>'})}
   }else{
@@ -358,6 +379,7 @@ async function openDetail(kind,id){
   }
 }
 function closeDetail(){$('detail').classList.remove('on');$('detail').innerHTML='';document.body.style.overflow=''}
+function applyZh(){const v=($('zhName').value||'').trim();if(!v)return;curDetail.hint=v;if(curDetail.cid)saveZh(curDetail.cid,v);toast('用「'+v+'」找线路');loadStreams()}
 function streamId(){
   const d=curDetail;
   if(d.kind.startsWith('cm:')){
