@@ -34,6 +34,8 @@ class MainActivity : Activity() {
             // 本地 file 页面需要请求 https 接口（片源/海报 API）
             allowFileAccessFromFileURLs = true
             allowUniversalAccessFromFileURLs = true
+            // 资源站的部分海报/线路是 http 的，放行混合内容避免图裂和播不了
+            mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             cacheMode = WebSettings.LOAD_DEFAULT
         }
         webView.webViewClient = WebViewClient()
@@ -56,14 +58,7 @@ class MainActivity : Activity() {
                 )
                 webView.visibility = View.GONE
                 requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-                @Suppress("DEPRECATION")
-                window.decorView.systemUiVisibility =
-                    View.SYSTEM_UI_FLAG_FULLSCREEN or
-                        View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
-                        View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
-                        View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-                        View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
-                        View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                setImmersive(true)
             }
 
             override fun onHideCustomView() {
@@ -72,8 +67,7 @@ class MainActivity : Activity() {
                 customView = null
                 webView.visibility = View.VISIBLE
                 requestedOrientation = savedOrientation
-                @Suppress("DEPRECATION")
-                window.decorView.systemUiVisibility = View.SYSTEM_UI_FLAG_VISIBLE
+                setImmersive(false)
                 customCallback?.onCustomViewHidden()
                 customCallback = null
             }
@@ -85,6 +79,20 @@ class MainActivity : Activity() {
         }
     }
 
+    @Suppress("DEPRECATION")
+    private fun setImmersive(on: Boolean) {
+        window.decorView.systemUiVisibility = if (on) {
+            View.SYSTEM_UI_FLAG_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+        } else {
+            View.SYSTEM_UI_FLAG_VISIBLE
+        }
+    }
+
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         if (::webView.isInitialized) webView.saveState(outState)
@@ -93,7 +101,7 @@ class MainActivity : Activity() {
     @Deprecated("Use onBackPressedDispatcher")
     override fun onBackPressed() {
         if (customView != null) {
-            webView.webChromeClient.onHideCustomView()
+            webView.webChromeClient?.onHideCustomView()
             return
         }
         if (::webView.isInitialized && webView.canGoBack()) webView.goBack()
